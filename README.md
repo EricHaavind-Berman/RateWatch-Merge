@@ -1,2 +1,2 @@
-# RateWatch-Merge
-Stata Do File to merge ratewatch data for ongoing project
+# Survival Analysis
+This is a Stata do file that does some survival analysis as an example for code review
