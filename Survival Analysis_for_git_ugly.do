@@ -9,193 +9,220 @@ Steps:
 2 - Visual and Regression Analysis
 */
 
-local wd "H:\Juli"
-cd `wd'
+clear all
+cd "H:\Juli"
 
 ////////////////////////////////////////////////////////////////////////////////
 /////////////////////////// 1 - Import and Merge ///////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////
-//Import Liabilities
-////////////////////////
-import excel "Assets_and_Liabs.xlsx", sheet("Liabs") firstrow clear
 
-// Drop variables where all observations are missing
-foreach var of varlist _all {
-	capture assert mi(`var')
-	if !_rc {
-	drop `var'
+//Import Liabilities
+import excel "Assets_and_Liabs.xlsx", sheet("Liabs") firstrow clear
+drop BN BO BP BQ BR BS BT BU BV BW
+
+save "LiabsWide.dta", replace
+
+
+//Changing from years in columns to one column with the date
+local vars x2015Q2 x2015Q1 x2014Q4 x2014Q3 x2014Q2 x2014Q1 x2013Q4 x2013Q3 ///
+	x2013Q2 x2013Q1 x2012Q4 x2012Q3 x2012Q2 x2012Q1 x2011Q4 x2011Q3 x2011Q2 ///
+	x2011Q1 x2010Q4 x2010Q3 x2010Q2 x2010Q1 x2009Q4 x2009Q3 x2009Q2 x2009Q1 ///
+	x2008Q4 x2008Q3 x2008Q2 x2008Q1 x2007Q4 x2007Q3 x2007Q2 x2007Q1 x2006Q4 ///
+	x2006Q3 x2006Q2 x2006Q1 x2005Q4 x2005Q3 x2005Q2 x2005Q1 x2004Q4 x2004Q3 ///
+	x2004Q2 x2004Q1 x2003Q4 x2003Q3 x2003Q2 x2003Q1 x2002Q4 x2002Q3 x2002Q2 ///
+	x2002Q1 x2001Q4 x2001Q3 x2001Q2 x2001Q1 x2000Q4
+
+local l = 1
+foreach v in `vars' {
+	use "LiabsWide.dta"
+	keep InstitutionName Public Type SNLInstitutionKey Ticker DateEstablished `v'
+	rename `v' Liabilities
+	gen date = "`v'"
+	if `l' == 1 {
+		save "LiabsLong.dta", replace
+		local l = 2
+	}
+	else {
+		append using "LiabsLong.dta"
+		save "LiabsLong.dta", replace
 	}
 }
-// Dropping all rows with all missing values (No institution name)
-drop if InstitutionName == ""
-
-// Reshaping from years in columns to one column with the date
-reshape long x, i(InstitutionName Public Type SNLInstitutionKey Ticker DateEstablished) ///
-	j(date) string
-rename x Liabilities
-
-// make the date variable quarterly from string "yyyyQq" (2015Q2 for example)
-gen year = substr(date,1,4)
-gen quarter = substr(date,length(date),1)
+//Date stuff
+gen year = substr(date,2,4)
+gen quarter = substr(date, 7,1)
 destring year quarter, replace
 drop date
 gen date = yq(year, quarter)
 drop year quarter
 format date %tq
+
+//For some reason there were a ton of empty cells 
+// (probably from the bottom of the excel file)
+drop if SNLInstitutionKey == .
 
 //Save
 save "LiabsLong.dta", replace
 
 
-////////////////////////
+
+
+
+
 //Import Assets
-////////////////////////
 import excel "Assets_and_Liabs.xlsx", sheet("Assets") firstrow clear
 
-// Reshaping from years in columns to one column with the date
-reshape long x, i(InstitutionName Public Type SNLInstitutionKey Ticker DateEstablished) ///
-	j(date) string
-rename x Assets
+save "AssetsWide.dta", replace
 
-// Same date modification as above
-gen year = substr(date,1,4)
-gen quarter = substr(date,length(date),1)
+//Changing from years in columns to one column with the date
+local vars x2015Q2 x2015Q1 x2014Q4 x2014Q3 x2014Q2 x2014Q1 x2013Q4 x2013Q3 ///
+	x2013Q2 x2013Q1 x2012Q4 x2012Q3 x2012Q2 x2012Q1 x2011Q4 x2011Q3 x2011Q2 ///
+	x2011Q1 x2010Q4 x2010Q3 x2010Q2 x2010Q1 x2009Q4 x2009Q3 x2009Q2 x2009Q1 ///
+	x2008Q4 x2008Q3 x2008Q2 x2008Q1 x2007Q4 x2007Q3 x2007Q2 x2007Q1 x2006Q4 ///
+	x2006Q3 x2006Q2 x2006Q1 x2005Q4 x2005Q3 x2005Q2 x2005Q1 x2004Q4 x2004Q3 ///
+	x2004Q2 x2004Q1 x2003Q4 x2003Q3 x2003Q2 x2003Q1 x2002Q4 x2002Q3 x2002Q2 ///
+	x2002Q1 x2001Q4 x2001Q3 x2001Q2 x2001Q1 x2000Q4
+
+local l = 1
+foreach v in `vars' {
+	use "AssetsWide.dta"
+	keep InstitutionName Public Type SNLInstitutionKey Ticker DateEstablished `v'
+	rename `v' Assets
+	gen date = "`v'"
+	if `l' == 1 {
+		save "AssetsLong.dta", replace
+		local l = 2
+	}
+	else {
+		append using "AssetsLong.dta"
+		save "AssetsLong.dta", replace
+	}
+}
+//Date stuff
+gen year = substr(date,2,4)
+gen quarter = substr(date, 7,1)
 destring year quarter, replace
 drop date
 gen date = yq(year, quarter)
 drop year quarter
 format date %tq
 
+//Save
+save "AssetsLong.dta", replace
 
-//Merge with liabilities
+//Merging
+
 merge 1:1 SNLInstitutionKey date using "LiabsLong.dta" //need perfect match
-/* Perfect Merge! (better be)
-    Result                           # of obs.
-    -----------------------------------------
-    not matched                             0
-    matched                            38,350  (_merge==3)
-    -----------------------------------------
-*/
+
 drop _merge
 
-/////////////////////////////////////////////
-// Just a bit more cleaning/set up
-/////////////////////////////////////////////
+//A bit more cleaning
+drop if Assets == .
 
-// We don't care about it if we don't have data
-drop if Assets == . //(24,670 observations deleted)
+bysort SNLInstitutionKey: gen last = _n == _N
 
-// Generate failure variable 
-// (this will be the most recent available observation in the dataset)
-sort SNLInstitutionKey date // need this so the most recent date is last
-by SNLInstitutionKey: gen last = _n == _N
 gen fail = 1 if date != yq(2015,2) & last == 1
 
-// Survival date variable
 gen survDate = date - 162
 
-// Need to encode for ease of use
-gen Equity = Type == "e" // dummy variable for equity vs mortgage REIT (equtiy = 1)
-// label type variables
-label define Equity 1 "Equity" 0 "Morgtage"
-label define Public 1 "Public" 0 "NonPublic"
-label value Equity Equity
-label value Public Public
+gen Type2 = 1 if Type == "e"
+replace Type2 = 0 if Type == "m"
+drop Type
+rename Type2 Type
 
-// Generate leverage variable
 gen Leverage = Liabilities/Assets
 
-// Tell Stata that this is survival-time
+
 stset survDate, id(SNLInstitutionKey) failure(fail==1)
 
-// GENERATE IMPORTANT VARIABLES
-// Logged variables for % change rather than unit change
-gen lLiab = ln(Liabilities)
-gen lAss = ln(Assets)
-gen lLev = ln(Leverage)
-// Generate interaction term for public equity
-gen PT = Public*Equity
-// Generate number of fails per date for graphing
-bysort date: egen num = count(fail) if fail == 1
-bysort date: egen numFails = max(num) if fail == 1
-
-
-//Save
+//Saving
 save "REITclean.dta", replace
+
 
 
 ////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////// 2 - Analysis ///////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-/* 
-cd "H:\Juli"
-use "REITclean.dta, clear 
-*/
-graph drop _all
-//////////////////////////////////
-// Descriptive Statistics and Graphs
-//////////////////////////////////
-// Tables
+
+
+//On to the survival analysis
+
+//Descriptive Statistics and Graphs
+
+hist date if fail == 1, percent w(1)
 stdescribe
 stsum
+egen PT_cat = group(Public Type)
+sts graph, by(Type) hazard
+sts graph, cumhaz
+sts graph, by(Public Type) survival
 sts list, survival
-sts test Public Equity
-// Graphing
-hist date if fail == 1, percent w(1) name(failures) // failures over time as % of total
-sts graph, by(Equity) hazard name(hazard) 			// hazard estimates
-sts graph, cumhaz name(cumhazard) 					// cumulative hazard 
-sts graph, by(Public Equity) survival name(KapMei)	// Kaplan-Meier
-graph bar numFails, over(date) by(Equity Public)	// UNFINISHED AND UGLY
+sts test Public Type
 
-// Regressions 
-// TODO: code output with esttab
+
+
+//log variables, this is the way it should actually be done, think about a 
+// change in a % of liabilities, assets, or leverage rather than 1 unit.
+gen lLiab = ln(Liabilities)
+gen lAss = ln(Assets)
+gen lLev = ln(Leverage)
+
+gen PT = Public*Type
+
 stcox lLev 
 stcox lLiab lAss
-stcox lLev Public Equity
-stcox lLev lAss Public Equity PT, vce(robust)
-stcox lLiab lAss Public Equity
+stcox lLev Public Type
+stcox lLev lAss Public Type PT, vce(robust)
+stcox lLiab lAss Public Type
 
 
-////////////////////////////////////////////////////////////////////////////////
-// Single observation survival analysis 
-/* 1 - take median (or some other stat) of Assets, Liabs, and Leverage
-   2 - find length of life (Failure Date - Established Date)
-   3 - keep one observation per REIT
-   4 - run analysis         */
-////////////////////////////////////////////////////////////////////////////////
 
-preserve // we don't want to mess with the old data so we will preserve/restore
 
-// keep only observations with established date
-drop if DateEstablished == . //(7,350 observations deleted)
 
-// 1 - take stats
+bysort date: egen num = count(fail) if fail == 1
+bysort date: egen numFails = max(num) if fail == 1
+label define Type 1 "Equity" 0 "Morgtage"
+label define Public 1 "Public" 0 "NonPublic"
+label value Type Type
+label value Public Public
+graph bar numFails, over(date) by(Type Public)
+
+
+
+
+
+/////////////////////////////SINGLE OBS/////////////////////////////////////////
+// not as useful.
+
+
+drop if DateEstablished == .
+
 egen medAssets = median(Assets), by(SNLInstitutionKey)
 egen medLiabs = median(Liabilities), by(SNLInstitutionKey)
 egen medLev = median(Leverage), by(SNLInstitutionKey)
 
-// 2 - find length of life
 replace DateEstablished = qofd(DateEstablished)
+format DateEstablished %tq
+
 egen lifetime = max(date - DateEstablished), by(SNLInstitutionKey)
 
-// 3 - keep one observation per REIT and only variables we need
 keep if last == 1
-keep medAssets medLiabs medLev lifetime SNLInstitutionKey Public Equity fail
 
-// tell Stata that this is survival data
+keep medAssets medLiabs medLev lifetime SNLInstitutionKey Public Type fail
+
 stset lifetime, failure(fail)
 
-// Run analysis
-// TODO: code output with esttab
-stcox medLev
-stcox medLiab medAssets
-stcox medLev Public Equity
-stcox medLev medAssets Public Equity
-stcox medLiab medAssets Public Equity
 
-restore
+stcox medLev
+
+stcox medLiab medAssets
+
+stcox medLev Public Type
+
+stcox medLev medAssets Public Type
+
+stcox medLiab medAssets Public Type
+
 
 
 
